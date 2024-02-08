@@ -6,6 +6,10 @@ from email.mime.text import MIMEText
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from bs4 import BeautifulSoup
+from playsound import playsound
+import pyttsx3
+import os
+import speech_recognition as sr
 
 CLIENT_SECRET_FILE = 'abc.json'
 API_NAME = 'gmail'
@@ -19,11 +23,43 @@ SCOPES = ['https://mail.google.com/', 'https://www.googleapis.com/auth/gmail.rea
 
 authenticate()"""
 app = Flask(__name__)
+
+
+def speak(text):
+    engine = pyttsx3.init()
+    engine.say(text)
+    engine.runAndWait()
+
+
+def listen_and_execute():
+    recognizer = sr.Recognizer()
+
+    try:
+        with sr.Microphone() as source:
+            print("Listening...")
+            audio = recognizer.listen(source, timeout=10, phrase_time_limit=5)
+            print("Recognizing...")
+
+            command = recognizer.recognize_google(audio).lower()
+            print("You said:", command)
+
+        
+    except sr.WaitTimeoutError:
+        print("Timeout. No speech detected.")
+    except sr.UnknownValueError:
+        print("Could not understand audio")
+    except sr.RequestError as e:
+        print("Could not request results; {0}".format(e))
+
+
+
+
 def read_emails():
     """
     Retrieve emails from Gmail inbox
     """
-   
+    speak("reading mails")
+    listen_and_execute()
     service = Create_Service(CLIENT_SECRET_FILE, API_NAME, API_VERSION, SCOPES)
 
     # Call the Gmail API to retrieve emails
@@ -39,8 +75,10 @@ def read_emails():
             message_data = msg['payload']['headers']
             for values in message_data:
                 name = values['name']
+               
                 if name == 'From':
                     from_name = values['value']
+                    speak(from_name)
                 if name == 'Subject':
                     subject = values['value']
             if 'parts' in msg['payload']:        
@@ -67,6 +105,7 @@ def delete_last_message_from_sender(sender_name):
         return 'No messages found.'
 
     last_message_id = None
+    flag=1
     for message in messages:
         msg = service.users().messages().get(userId='me', id=message['id']).execute()
         message_data = msg['payload']['headers']
@@ -77,17 +116,80 @@ def delete_last_message_from_sender(sender_name):
                 from_name = values['value']
                 print(from_name)
                 # Check if the sender matches the specified sender name
-                if from_name.strip().lower() == sender_name.strip().lower():
+                if sender_name in from_name:
 
                     last_message_id = message['id']
+                    flag=0
                     break
-
+        if(flag==0):
+            break        
     if last_message_id:
         # Delete the last message from the sender
         service.users().messages().delete(userId='me', id=last_message_id).execute()
         return f"Last message from {sender_name} deleted successfully!"
     else:
         return f"No messages found from {sender_name}."
+
+
+
+def search_email(sender_name):
+    
+    service = Create_Service(CLIENT_SECRET_FILE, API_NAME, API_VERSION, SCOPES)
+
+    # Call the Gmail API to retrieve emails
+    results = service.users().messages().list(userId='me', labelIds=['INBOX']).execute()
+    messages = results.get('messages', [])
+
+    if not messages:
+        return 'No messages found.'
+    flag=1
+    for message in messages:
+        msg = service.users().messages().get(userId='me', id=message['id']).execute()
+        message_data = msg['payload']['headers']
+        for values in message_data:
+            name = values['name']
+          
+            if name == 'From':
+                from_name = values['value']
+              
+                if sender_name in from_name:
+
+                    
+                    flag=0
+                    break
+        if(flag==0):
+            break    
+    if(flag==0):
+        speak("yes there is") 
+    else:
+        speak("no message")     
+
+def create_draft_email():
+    """
+    Create a draft email using Gmail API
+    """
+    service = Create_Service(CLIENT_SECRET_FILE, API_NAME, API_VERSION, SCOPES)
+
+    emailMsg = 'This is a draft email.'
+    mimeMessage = MIMEMultipart()
+    mimeMessage['to'] = 'aanittantony@gmail.com'
+    mimeMessage['subject'] = 'Draft Email'
+    mimeMessage.attach(MIMEText(emailMsg, 'plain'))
+    raw_string = base64.urlsafe_b64encode(mimeMessage.as_bytes()).decode()
+
+    draft = {
+        'message': {
+            'raw': raw_string
+        }
+    }
+
+    draft = service.users().drafts().create(userId='me', body=draft).execute()
+    return 'Draft email created successfully!' 
+
+
+
+
+
 
 
 @app.route('/send')
@@ -110,17 +212,33 @@ def send_email():
 @app.route('/read')
 
 def read():
-    resultnew = read_emails()
-    return resultnew
+    read_emails()
 
-@app.route('/') 
+
+@app.route('/')
+
+def hw():
+   return "helloworld"
+  
+
+@app.route('/delete') 
       
 def delete():
-    sender_name = "newsletters@audible.in"
+    sender_name = "vmail456345@gmail.com"
     result = delete_last_message_from_sender(sender_name)
     return result
 
+@app.route('/search') 
+      
+def search():
+    sender_name = "noreply@jobalertshub.com"
+    search_email(sender_name)
 
+@app.route('/draft')
+def draftemail():
+    result = create_draft_email()
+    return result
+    
 
 
 if __name__ == '__main__':
